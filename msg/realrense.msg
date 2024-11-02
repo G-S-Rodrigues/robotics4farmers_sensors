@@ -1,0 +1,5 @@
+std_msgs/Header header
+sensor_msgs/Image color_image
+sensor_msgs/Image depth_image
+uint64 color_timestamp
+uint64 depth_timestamp

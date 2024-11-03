@@ -4,7 +4,6 @@
 // #include <string>
 #include <iostream>
 
-
 #include "rclcpp/rclcpp.hpp"
 
 #include <librealsense2/rs.hpp>
@@ -59,7 +58,7 @@
 class RealSenseNodeSim : public rclcpp::Node
 {
 public:
-    RealSenseNodeSim(const rclcpp::NodeOptions & options) 
+    RealSenseNodeSim(const rclcpp::NodeOptions &options)
         : Node("realsense_node", options), align_to_color(RS2_STREAM_COLOR)
     {
         this->declare_parameter<std::string>("bag_dir", "Directory where the bag file is located");
@@ -68,6 +67,16 @@ public:
         RCLCPP_DEBUG(this->get_logger(), "Camera file directory: %s", camera_bag_dir_.c_str());
 
         initialize_camera();
+
+        // Start the camera loop in a separate thread
+        camera_thread_ = std::thread(&RealSenseNodeSim::publish_frames, this);
+    }
+    ~RealSenseNodeSim()
+    {
+        if (camera_thread_.joinable())
+        {
+            camera_thread_.join();
+        }
     }
 
 private:
@@ -92,15 +101,53 @@ private:
         RCLCPP_INFO(this->get_logger(), "Initialized camera from bag file: %s", camera_bag_dir_.c_str());
     }
 
+    void publish_frames()
+    {
+        while (rclcpp::ok())
+        {
+            try
+            {
+                rs2::frameset frameset = pipe_.wait_for_frames();
+                frameset = align_to_color.process(frameset);
+                rs2::depth_frame depth_frame = frameset.get_depth_frame();
+                rs2::video_frame color_frame = frameset.get_color_frame();
+
+                cv::Mat color_image(cv::Size(color_frame.get_width(), color_frame.get_height()), CV_8UC3, (void *)color_frame.get_data());
+                cv::Mat color_image_rgb;
+                cv::cvtColor(color_image, color_image_rgb, cv::COLOR_BGR2RGB);
+                cv::Mat depth_image(cv::Size(depth_frame.get_width(), depth_frame.get_height()), CV_16UC1, (void *)depth_frame.get_data());
+
+                auto reading_msg = your_package_name::msg::RealSenseReading();
+                reading_msg.header.stamp = this->now();
+                reading_msg.color_image = *cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", color_image_rgb).toImageMsg();
+                reading_msg.depth_image = *cv_bridge::CvImage(std_msgs::msg::Header(), "mono16", depth_image).toImageMsg();
+                reading_msg.timestamp = frameset.get_frame_metadata(RS2_FRAME_METADATA_TIME_OF_ARRIVAL); // Adding timestamp
+
+                {
+                    std::lock_guard<std::mutex> lock(mtx_);
+                    reading_pub_->publish(reading_msg);
+                }
+            }
+            catch (const rs2::error &e)
+            {
+                RCLCPP_ERROR(this->get_logger(), "Error in publish_frames: %s", e.what());
+            }
+        }
+    }
+
     std::string camera_bag_dir_;
     std::string bag_dir_;
+
+    std::thread camera_thread_;
 
     rs2::pipeline pipe_;
     rs2::config cfg_;
     rs2::align align_to_color;
     rs2::pipeline_profile profile_;
-};
 
+    rclcpp::Publisher<r4f_realsense::msg::RealSenseReading>::SharedPtr reading_pub_;
+    std::mutex mtx_;
+};
 
 int main(int argc, char *argv[])
 {

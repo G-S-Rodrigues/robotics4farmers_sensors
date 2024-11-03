@@ -1,0 +1,1 @@
+add_subdirectory(gnss_compass_utils)

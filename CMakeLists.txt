@@ -10,14 +10,16 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(cv_bridge REQUIRED)
+
 find_package(image_transport REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_typesupport_cpp REQUIRED)
-
+find_package(r4f_msgs REQUIRED)
 
 find_package(realsense2 REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 4.10 REQUIRED)
+
+find_package(cv_bridge REQUIRED)
 
 add_subdirectory(include/r4f_sensors)
 
@@ -26,7 +28,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GnssReading.msg"
   DEPENDENCIES std_msgs sensor_msgs
 )
-
 
 # Include directories
 include_directories(
@@ -39,10 +40,12 @@ ament_target_dependencies(realsense_sim
   rclcpp
   std_msgs
   sensor_msgs
+  OpenCV
   cv_bridge
   image_transport
   rosidl_typesupport_cpp
   realsense2
+  r4f_msgs
 )
 
 add_executable(gnss_sim src/gnss_sim.cpp)

@@ -11,7 +11,7 @@ class GnssNodeSim : public rclcpp::Node
 {
 public:
     GnssNodeSim(const rclcpp::NodeOptions &options)
-        : Node("gnss_node", options)
+        : Node("GnssNode", options)
     {
         this->declare_parameter<std::string>("data_dir", "Directory where the anpp file is located");
         this->get_parameter("data_dir", anpp_dir_);
@@ -84,7 +84,7 @@ private:
 
             if (elapsed_time >= 1)
             {
-                RCLCPP_INFO(this->get_logger(), "Gnss publish per second: %d", gnss_count);
+                RCLCPP_DEBUG(this->get_logger(), "Gnss publish per second: %d", gnss_count);
                 gnss_count = 0;                                         // Reset the counter
                 start_time = std::chrono::high_resolution_clock::now(); // Reset the timer
             }

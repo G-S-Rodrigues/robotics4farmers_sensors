@@ -6,9 +6,9 @@ def generate_launch_description():
         Node(
             package='r4f_sensors',
             executable='gnss_sim',
-            name='gnss_node',
+            name='GnssNode',
             parameters=[{'data_dir': '/home/guilh/data_tese/vinha-11-07/run3'}],
             output='screen',
-            arguments=['--ros-args', '--log-level', 'INFO'] # DEBUG
+            arguments=['--ros-args', '--log-level', 'DEBUG'] # DEBUG
         ),
     ])

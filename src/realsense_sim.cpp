@@ -9,15 +9,15 @@
 #include <cv_bridge/cv_bridge.h>
 #include "rclcpp/rclcpp.hpp"
 #include <sensor_msgs/msg/image.hpp>
-#include <std_msgs/msg/header.hpp>
-#include <std_msgs/msg/u_int64.hpp>
-#include <r4f_sensors/msg/rgbd.hpp>
+// #include <std_msgs/msg/header.hpp>
+// #include <std_msgs/msg/u_int64.hpp>
+#include <r4f_msgs/msg/rgbd.hpp>
 
 class RealSenseNodeSim : public rclcpp::Node
 {
 public:
     RealSenseNodeSim(const rclcpp::NodeOptions &options)
-        : Node("realsense_node", options), align_to_color(RS2_STREAM_COLOR)
+        : Node("RealSenseNode", options), align_to_color(RS2_STREAM_COLOR)
     {
         this->declare_parameter<std::string>("data_dir", "Directory where the bag file is located");
         this->get_parameter("data_dir", bag_dir_);
@@ -32,12 +32,12 @@ public:
         //                .durability(rclcpp::DurabilityPolicy::Volatile)
         //                .liveliness(rclcpp::LivelinessPolicy::Automatic);
 
-        
+        // Create publishers
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
-        // rgbd_pub_ = this->create_publisher<r4f_sensors::msg::RGBD>("rgbd", 10);
         rgb_pub_ = this->create_publisher<sensor_msgs::msg::Image>("color_image", qos);
-        depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>("depth_image", qos);
-        timestamp_pub_ = this->create_publisher<std_msgs::msg::UInt64>("timestamp_image", qos);
+        // depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>("depth_image", qos);
+        // timestamp_pub_ = this->create_publisher<std_msgs::msg::UInt64>("timestamp_image", qos);
+        rgbd_pub_ = this->create_publisher<r4f_msgs::msg::RGBD>("rgbd_image", qos);
 
         // ignore the first 5 frames
         for (int i = 0; i < 5; ++i)
@@ -112,25 +112,27 @@ private:
             rs2::video_frame color_frame = frameset.get_color_frame();
 
             cv::Mat color_image(cv::Size(color_frame.get_width(), color_frame.get_height()), CV_8UC3, (void *)color_frame.get_data());
-            // cv::Mat color_image_rgb;
-            // cv::cvtColor(color_image, color_image_rgb, cv::COLOR_BGR2RGB);
+            cv::Mat color_image_rgb;
+            cv::cvtColor(color_image, color_image_rgb, cv::COLOR_BGR2RGB);
             cv::Mat depth_image(cv::Size(depth_frame.get_width(), depth_frame.get_height()), CV_16UC1, (void *)depth_frame.get_data());
 
-            auto depth_msg = sensor_msgs::msg::Image();
             auto rgb_msg = sensor_msgs::msg::Image();
-            auto timestamp_msg = std_msgs::msg::UInt64();
+            auto rgbd_msg = r4f_msgs::msg::RGBD();
 
-            // rgbd_msg.header.stamp = this->now();
-            timestamp_msg.data = frameset.get_frame_metadata(RS2_FRAME_METADATA_TIME_OF_ARRIVAL);
-            // timestamp_msg.data = static_cast<uint64_t>(frameset.get_frame_metadata(RS2_FRAME_METADATA_TIME_OF_ARRIVAL));
-            rgb_msg = *cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", color_image).toImageMsg();
-            depth_msg = *cv_bridge::CvImage(std_msgs::msg::Header(), "mono16", depth_image).toImageMsg();
+            // Set up header with timestamp
+            std_msgs::msg::Header header;
+            header.stamp = this->now();
+            rgb_msg = *cv_bridge::CvImage(header, "bgr8", color_image_rgb).toImageMsg();
+
+            rgbd_msg.header.stamp = this->now();
+            rgbd_msg.rgb = rgb_msg;
+            rgbd_msg.depth = *cv_bridge::CvImage(header, "mono16", depth_image).toImageMsg();
+            rgbd_msg.timestamp.data = frameset.get_frame_metadata(RS2_FRAME_METADATA_TIME_OF_ARRIVAL);
 
             {
                 std::lock_guard<std::mutex> lock(mtx_);
-                timestamp_pub_->publish(timestamp_msg);
                 rgb_pub_->publish(rgb_msg);
-                depth_pub_->publish(depth_msg);
+                rgbd_pub_->publish(rgbd_msg);
             }
         }
         catch (const rs2::error &e)
@@ -149,10 +151,8 @@ private:
     rs2::align align_to_color;
     rs2::pipeline_profile profile_;
 
-    // rclcpp::Publisher<r4f_sensors::msg::RGBD>::SharedPtr rgbd_pub_;
+    rclcpp::Publisher<r4f_msgs::msg::RGBD>::SharedPtr rgbd_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rgb_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_pub_;
-    rclcpp::Publisher<std_msgs::msg::UInt64>::SharedPtr timestamp_pub_;
     std::mutex mtx_;
 };
 

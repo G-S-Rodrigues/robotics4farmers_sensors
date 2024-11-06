@@ -2,6 +2,7 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
+#include <memory>
 
 #include <librealsense2/rs.hpp>
 #include <opencv2/opencv.hpp>
@@ -9,9 +10,9 @@
 #include <cv_bridge/cv_bridge.h>
 #include "rclcpp/rclcpp.hpp"
 #include <sensor_msgs/msg/image.hpp>
-// #include <std_msgs/msg/header.hpp>
-// #include <std_msgs/msg/u_int64.hpp>
+
 #include <r4f_msgs/msg/rgbd.hpp>
+#include <r4f_msgs/srv/camera_info.hpp>
 
 class RealSenseNodeSim : public rclcpp::Node
 {
@@ -35,15 +36,18 @@ public:
         // Create publishers
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
         rgb_pub_ = this->create_publisher<sensor_msgs::msg::Image>("color_image", qos);
-        // depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>("depth_image", qos);
-        // timestamp_pub_ = this->create_publisher<std_msgs::msg::UInt64>("timestamp_image", qos);
         rgbd_pub_ = this->create_publisher<r4f_msgs::msg::RGBD>("rgbd_image", qos);
 
-        // ignore the first 5 frames
-        for (int i = 0; i < 5; ++i)
-        {
-            pipe_.wait_for_frames();
-        }
+        rclcpp::QoS qos_camera_info(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_default));
+        qos.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);
+        qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
+
+        // Prepare camera information for future service requests
+        prepare_camera_info();
+        // Create a service server to provide camera information
+        camera_info_service_ = this->create_service<r4f_msgs::srv::CameraInfo>(
+            "get_camera_info",
+            std::bind(&RealSenseNodeSim::handle_camera_info_service, this, std::placeholders::_1, std::placeholders::_2));
 
         // Start the camera loop in a separate thread
         camera_thread_ = std::thread(&RealSenseNodeSim::camera_loop, this);
@@ -53,6 +57,7 @@ public:
         if (camera_thread_.joinable())
         {
             camera_thread_.join();
+            RCLCPP_INFO(this->get_logger(), "Camera thread end process");
         }
     }
 
@@ -73,6 +78,12 @@ private:
         if (rs2::playback playback = device.as<rs2::playback>())
         {
             playback.set_real_time(true);
+        }
+
+        // ignore the first 5 frames
+        for (int i = 0; i < 5; ++i)
+        {
+            pipe_.wait_for_frames();
         }
 
         // Log the initialization status
@@ -127,7 +138,7 @@ private:
             rgbd_msg.header.stamp = this->now();
             rgbd_msg.rgb = rgb_msg;
             rgbd_msg.depth = *cv_bridge::CvImage(header, "mono16", depth_image).toImageMsg();
-            rgbd_msg.timestamp.data = frameset.get_frame_metadata(RS2_FRAME_METADATA_TIME_OF_ARRIVAL);
+            rgbd_msg.timestamp = frameset.get_frame_metadata(RS2_FRAME_METADATA_TIME_OF_ARRIVAL);
 
             {
                 std::lock_guard<std::mutex> lock(mtx_);
@@ -139,6 +150,39 @@ private:
         {
             RCLCPP_ERROR(this->get_logger(), "Error in publish_frames: %s", e.what());
         }
+    }
+
+    void prepare_camera_info()
+    {   
+        std::lock_guard<std::mutex> lock(mtx_);
+        auto color_profile = profile_.get_stream(RS2_STREAM_COLOR);
+        rs2::depth_sensor depth_sensor = profile_.get_device().first<rs2::depth_sensor>();
+        float depth_units = depth_sensor.get_option(RS2_OPTION_DEPTH_UNITS);
+
+        // Get the width, height, format, and scale of the color stream
+        rs2_intrinsics color_intrinsics = color_profile.as<rs2::video_stream_profile>().get_intrinsics();
+
+        camera_info_msg_.width = color_intrinsics.width;
+        camera_info_msg_.height = color_intrinsics.height;
+        camera_info_msg_.fx = color_intrinsics.fx;
+        camera_info_msg_.fy = color_intrinsics.fy;
+        camera_info_msg_.ppx = color_intrinsics.ppx;
+        camera_info_msg_.ppy = color_intrinsics.ppy;
+        camera_info_msg_.depth_units = depth_units;
+
+        RCLCPP_INFO(this->get_logger(), "Camera info preparation complete.");
+    }
+
+    void handle_camera_info_service(
+        const std::shared_ptr<r4f_msgs::srv::CameraInfo::Request>,
+        std::shared_ptr<r4f_msgs::srv::CameraInfo::Response> response)
+    {
+        RCLCPP_INFO(this->get_logger(), "Received service request for /get_camera_info.");
+
+        std::lock_guard<std::mutex> lock(mtx_);
+        // Fill in the response with the current camera information
+        *response = camera_info_msg_;
+        RCLCPP_INFO(this->get_logger(), "Camera info service request handled.");
     }
 
     std::string camera_bag_dir_;
@@ -153,7 +197,11 @@ private:
 
     rclcpp::Publisher<r4f_msgs::msg::RGBD>::SharedPtr rgbd_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr rgb_pub_;
+    rclcpp::Service<r4f_msgs::srv::CameraInfo>::SharedPtr camera_info_service_;
     std::mutex mtx_;
+
+    // Camera info message to be provided by the service server
+    r4f_msgs::srv::CameraInfo::Response camera_info_msg_;
 };
 
 int main(int argc, char *argv[])

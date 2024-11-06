@@ -3,7 +3,7 @@
 #include <fstream>
 #include <vector>
 #include <rclcpp/rclcpp.hpp>
-#include "r4f_sensors/msg/gnss_reading.hpp"
+#include "r4f_msgs/msg/gnss_reading.hpp"
 
 #include "gnss_compass_utils/read_gnss_compass.h"
 
@@ -26,7 +26,7 @@ public:
             exit(EXIT_FAILURE);
         }
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
-        gnss_pub_ = this->create_publisher<r4f_sensors::msg::GnssReading>("gnss_reading", qos);
+        gnss_pub_ = this->create_publisher<r4f_msgs::msg::GnssReading>("gnss_reading", qos);
 
         an_decoder_initialise(&an_decoder);
         start_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -65,7 +65,7 @@ private:
     uint64_t last_packet_time_ms;
     FILE *anpp_file;
 
-    rclcpp::Publisher<r4f_sensors::msg::GnssReading>::SharedPtr gnss_pub_;
+    rclcpp::Publisher<r4f_msgs::msg::GnssReading>::SharedPtr gnss_pub_;
     std::mutex mtx_;
 
     void gnss_loop()
@@ -110,7 +110,7 @@ private:
                     /* this allows easy access to all the different values             */
                     if (decode_system_state_packet(&system_state_packet, an_packet) == 0)
                     {   
-                        auto gnssreading_msg_ = r4f_sensors::msg::GnssReading();
+                        auto gnssreading_msg_ = r4f_msgs::msg::GnssReading();
 
                         // RCLCPP_DEBUG(this->get_logger(), "decode message");
                         last_packet_time_ms = static_cast<uint64_t>(system_state_packet.unix_time_seconds) * 1000 + system_state_packet.microseconds / 1000;

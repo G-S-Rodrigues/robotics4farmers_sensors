@@ -23,12 +23,6 @@ find_package(cv_bridge REQUIRED)
 
 add_subdirectory(include/r4f_sensors)
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/RGBD.msg"
-  "msg/GnssReading.msg"
-  DEPENDENCIES std_msgs sensor_msgs
-)
-
 # Include directories
 include_directories(
   ${CMAKE_BINARY_DIR}/rosidl_generator_cpp
@@ -43,7 +37,6 @@ ament_target_dependencies(realsense_sim
   OpenCV
   cv_bridge
   image_transport
-  rosidl_typesupport_cpp
   realsense2
   r4f_msgs
 )
@@ -51,15 +44,8 @@ ament_target_dependencies(realsense_sim
 add_executable(gnss_sim src/gnss_sim.cpp)
 ament_target_dependencies(gnss_sim
   rclcpp
-  std_msgs
-  sensor_msgs
-  rosidl_typesupport_cpp
+  r4f_msgs
 )
-
-# Get the message type support target
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-
-
 # Link additional libraries explicitly if necessary
 target_link_libraries(realsense_sim
   ${cpp_typesupport_target}
